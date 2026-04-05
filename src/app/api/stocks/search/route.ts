@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchSymbols } from "@/lib/finnhub";
-import { ensureTables, pool } from "@/lib/db";
+import { ensureTables, getPool } from "@/lib/db";
+import { envCheckResponse, getMissingDatabaseEnvVars } from "@/lib/env";
 
 export async function GET(req: NextRequest) {
   try {
@@ -9,22 +10,28 @@ export async function GET(req: NextRequest) {
     if (!q.trim()) {
       return NextResponse.json([]);
     }
+
+    if (track) {
+      const blocked = envCheckResponse(getMissingDatabaseEnvVars);
+      if (blocked) {
+        return blocked;
+      }
+    }
+
     const results = await searchSymbols(q);
 
     if (track && results.length > 0) {
       await ensureTables();
       const symbols = results.slice(0, 4).map((item: { symbol: string }) => item.symbol.toUpperCase());
-      await pool.query(
+      await getPool().query(
         "INSERT INTO search_events (symbol) SELECT UNNEST($1::text[])",
         [symbols]
       );
     }
 
     return NextResponse.json(results);
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error?.message || "Search failed." },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Search failed.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

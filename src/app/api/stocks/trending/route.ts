@@ -17,11 +17,14 @@ async function fetchMostActive(region: "US" | "IN") {
   if (!Array.isArray(quotes)) return [];
 
   return quotes
-    .filter((item: any) => item?.symbol)
-    .map((item: any) => ({
+    .filter(
+      (raw): raw is Record<string, unknown> =>
+        typeof raw === "object" && raw !== null && "symbol" in raw && Boolean((raw as { symbol?: unknown }).symbol)
+    )
+    .map((item) => ({
       symbol: String(item.symbol).toUpperCase(),
-      description: `${item.shortName || item.longName || item.symbol}${item.exchange ? ` (${item.exchange})` : ""}`,
-      volume: Number(item.regularMarketVolume || 0)
+      description: `${item.shortName ?? item.longName ?? item.symbol}${item.exchange ? ` (${item.exchange})` : ""}`,
+      volume: Number(item.regularMarketVolume ?? 0)
     }))
     .filter((item: TopVolumeStock) => item.volume > 0);
 }

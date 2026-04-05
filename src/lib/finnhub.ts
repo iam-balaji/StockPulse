@@ -124,33 +124,61 @@ async function getCandlesFromYahoo(symbol: string): Promise<CandlePoint[]> {
 export async function getTopNews(symbol: string): Promise<StockNews[]> {
   const today = new Date().toISOString().slice(0, 10);
   const weekAgo = new Date(Date.now() - 1000 * 60 * 60 * 24 * 7).toISOString().slice(0, 10);
-  const data = await fetchJson(
+  const data = (await fetchJson(
     `/company-news?symbol=${encodeURIComponent(symbol)}&from=${weekAgo}&to=${today}`
-  );
+  )) as unknown;
+  const rows = Array.isArray(data) ? data : [];
 
-  return (data || []).slice(0, 3).map((item: any) => ({
-    id: item.id,
-    headline: item.headline,
-    source: item.source,
-    summary: item.summary,
-    url: item.url,
-    imageUrl: item.image || undefined,
-    videoUrl: item.video || item.videos?.[0]?.url || undefined
-  }));
+  return rows.slice(0, 3).map((raw) => {
+    const item = raw as Record<string, unknown>;
+    const videos = item.videos;
+    const firstVid =
+      Array.isArray(videos) && videos[0] && typeof videos[0] === "object"
+        ? (videos[0] as Record<string, unknown>).url
+        : undefined;
+    return {
+      id: Number(item.id ?? 0),
+      headline: String(item.headline ?? ""),
+      source: String(item.source ?? ""),
+      summary: String(item.summary ?? ""),
+      url: String(item.url ?? "#"),
+      imageUrl: typeof item.image === "string" ? item.image : undefined,
+      videoUrl:
+        typeof item.video === "string"
+          ? item.video
+          : typeof firstVid === "string"
+            ? firstVid
+            : undefined
+    };
+  });
 }
 
 export async function getMarketNews(): Promise<StockNews[]> {
   try {
-    const data = await fetchJson("/news?category=general");
-    return (data || []).slice(0, 12).map((item: any, index: number) => ({
-      id: Number(item.id || index + 1),
-      headline: String(item.headline || "Market update"),
-      source: String(item.source || "Market"),
-      summary: String(item.summary || ""),
-      url: String(item.url || "#"),
-      imageUrl: item.image || undefined,
-      videoUrl: item.video || item.videos?.[0]?.url || undefined
-    }));
+    const data = (await fetchJson("/news?category=general")) as unknown;
+    const rows = Array.isArray(data) ? data : [];
+    return rows.slice(0, 12).map((raw, index) => {
+      const item = raw as Record<string, unknown>;
+      const videos = item.videos;
+      const firstVid =
+        Array.isArray(videos) && videos[0] && typeof videos[0] === "object"
+          ? (videos[0] as Record<string, unknown>).url
+          : undefined;
+      return {
+        id: Number(item.id ?? index + 1),
+        headline: String(item.headline ?? "Market update"),
+        source: String(item.source ?? "Market"),
+        summary: String(item.summary ?? ""),
+        url: String(item.url ?? "#"),
+        imageUrl: typeof item.image === "string" ? item.image : undefined,
+        videoUrl:
+          typeof item.video === "string"
+            ? item.video
+            : typeof firstVid === "string"
+              ? firstVid
+              : undefined
+      };
+    });
   } catch {
     return [];
   }
@@ -162,12 +190,18 @@ async function searchSymbolsFromYahoo(query: string) {
     { next: { revalidate: 30 } }
   );
   if (!res.ok) return [];
-  const data = await res.json();
-  const quotes = Array.isArray(data?.quotes) ? data.quotes : [];
+  const data = (await res.json()) as { quotes?: unknown };
+  const quotes = Array.isArray(data.quotes) ? data.quotes : [];
 
   return quotes
-    .filter((item: any) => item?.symbol && item?.shortname)
-    .map((item: any) => ({
+    .filter(
+      (raw): raw is Record<string, unknown> =>
+        typeof raw === "object" &&
+        raw !== null &&
+        typeof (raw as Record<string, unknown>).symbol === "string" &&
+        typeof (raw as Record<string, unknown>).shortname === "string"
+    )
+    .map((item) => ({
       symbol: String(item.symbol).toUpperCase(),
       description: `${item.shortname}${item.exchange ? ` (${item.exchange})` : ""}`
     }));

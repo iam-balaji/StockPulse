@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { extractToken, verifyToken } from "@/lib/auth";
-import { ensureTables, pool } from "@/lib/db";
+import { ensureTables, getPool } from "@/lib/db";
+import { envCheckResponse, getMissingAuthEnvVars } from "@/lib/env";
 
 function getUserIdFromRequest(req: NextRequest) {
   const token = extractToken(req);
@@ -14,11 +15,16 @@ function getUserIdFromRequest(req: NextRequest) {
 }
 
 export async function GET(req: NextRequest) {
+  const blocked = envCheckResponse(getMissingAuthEnvVars);
+  if (blocked) {
+    return blocked;
+  }
+
   const userId = getUserIdFromRequest(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureTables();
-  const result = await pool.query(
+  const result = await getPool().query(
     `
       SELECT s.symbol
       FROM subscriptions sub
@@ -33,6 +39,11 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const blocked = envCheckResponse(getMissingAuthEnvVars);
+  if (blocked) {
+    return blocked;
+  }
+
   const userId = getUserIdFromRequest(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -41,12 +52,12 @@ export async function POST(req: NextRequest) {
   const normalized = String(symbol || "").toUpperCase().trim();
   if (!normalized) return NextResponse.json({ error: "Symbol is required" }, { status: 400 });
 
-  const stock = await pool.query(
+  const stock = await getPool().query(
     "INSERT INTO stocks (symbol) VALUES ($1) ON CONFLICT (symbol) DO UPDATE SET symbol = EXCLUDED.symbol RETURNING id, symbol",
     [normalized]
   );
 
-  await pool.query(
+  await getPool().query(
     "INSERT INTO subscriptions (user_id, stock_id) VALUES ($1, $2) ON CONFLICT (user_id, stock_id) DO NOTHING",
     [userId, stock.rows[0].id]
   );
@@ -55,6 +66,11 @@ export async function POST(req: NextRequest) {
 }
 
 export async function DELETE(req: NextRequest) {
+  const blocked = envCheckResponse(getMissingAuthEnvVars);
+  if (blocked) {
+    return blocked;
+  }
+
   const userId = getUserIdFromRequest(req);
   if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -63,7 +79,7 @@ export async function DELETE(req: NextRequest) {
   const normalized = String(symbol || "").toUpperCase().trim();
   if (!normalized) return NextResponse.json({ error: "Symbol is required" }, { status: 400 });
 
-  await pool.query(
+  await getPool().query(
     `
       DELETE FROM subscriptions
       WHERE user_id = $1

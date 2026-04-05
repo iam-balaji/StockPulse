@@ -1,15 +1,39 @@
 import { Pool } from "pg";
 
-const connectionString = process.env.DATABASE_URL;
+let pool: Pool | null = null;
 
-if (!connectionString) {
-  throw new Error("DATABASE_URL is required");
+function createPool(): Pool {
+  const connectionString = process.env.DATABASE_URL?.trim();
+  if (!connectionString) {
+    throw new Error("DATABASE_URL is not set");
+  }
+
+  const needsSsl =
+    connectionString.includes("sslmode=require") ||
+    connectionString.includes("neon.tech") ||
+    connectionString.includes("supabase.co") ||
+    connectionString.includes("pooler.supabase.com") ||
+    process.env.POSTGRES_SSL === "true";
+
+  return new Pool({
+    connectionString,
+    max: Number(process.env.PG_POOL_MAX || 10),
+    idleTimeoutMillis: 30_000,
+    ...(needsSsl ? { ssl: { rejectUnauthorized: false } } : {})
+  });
 }
 
-export const pool = new Pool({ connectionString });
+/** Lazy pool so `next build` and imports work when DATABASE_URL is only set at runtime (e.g. Vercel). */
+export function getPool(): Pool {
+  if (!pool) {
+    pool = createPool();
+  }
+  return pool;
+}
 
 export async function ensureTables() {
-  await pool.query(`
+  const db = getPool();
+  await db.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
       email TEXT UNIQUE NOT NULL,
@@ -17,14 +41,14 @@ export async function ensureTables() {
     );
   `);
 
-  await pool.query(`
+  await db.query(`
     CREATE TABLE IF NOT EXISTS stocks (
       id SERIAL PRIMARY KEY,
       symbol TEXT UNIQUE NOT NULL
     );
   `);
 
-  await pool.query(`
+  await db.query(`
     CREATE TABLE IF NOT EXISTS subscriptions (
       id SERIAL PRIMARY KEY,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -33,11 +57,11 @@ export async function ensureTables() {
     );
   `);
 
-  await pool.query(`
+  await db.query(`
     CREATE SEQUENCE IF NOT EXISTS search_events_id_seq;
   `);
 
-  await pool.query(`
+  await db.query(`
     CREATE TABLE IF NOT EXISTS search_events (
       id INTEGER PRIMARY KEY DEFAULT nextval('search_events_id_seq'),
       symbol TEXT NOT NULL,
@@ -45,7 +69,7 @@ export async function ensureTables() {
     );
   `);
 
-  await pool.query(`
+  await db.query(`
     ALTER SEQUENCE search_events_id_seq OWNED BY search_events.id;
   `);
 }

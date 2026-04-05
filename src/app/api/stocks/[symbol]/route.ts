@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCandles, getQuote, getTopNews } from "@/lib/finnhub";
+import { envCheckResponse, getMissingFinnhubEnvVars } from "@/lib/env";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ symbol: string }> }
 ) {
+  const blocked = envCheckResponse(getMissingFinnhubEnvVars);
+  if (blocked) {
+    return blocked;
+  }
+
   try {
     const { symbol } = await params;
     const normalized = symbol.toUpperCase();
@@ -20,10 +26,8 @@ export async function GET(
     const news = newsResult.status === "fulfilled" ? newsResult.value : [];
 
     return NextResponse.json({ quote, candles, news });
-  } catch (error: any) {
-    return NextResponse.json(
-      { error: error?.message || "Stock details fetch failed." },
-      { status: 500 }
-    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Stock details fetch failed.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }

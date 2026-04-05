@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { ensureTables, pool } from "@/lib/db";
+import { ensureTables, getPool } from "@/lib/db";
+import { envCheckResponse, getMissingDatabaseEnvVars } from "@/lib/env";
 
 type WindowType = "hour" | "day";
 
@@ -21,11 +22,14 @@ async function fetchMostActive(region: "US" | "IN"): Promise<PopularStock[]> {
   if (!Array.isArray(quotes)) return [];
 
   return quotes
-    .filter((item: any) => item?.symbol)
-    .map((item: any) => ({
+    .filter(
+      (raw): raw is Record<string, unknown> =>
+        typeof raw === "object" && raw !== null && "symbol" in raw && Boolean((raw as { symbol?: unknown }).symbol)
+    )
+    .map((item) => ({
       symbol: String(item.symbol).toUpperCase(),
-      description: `${item.shortName || item.longName || item.symbol}${item.exchange ? ` (${item.exchange})` : ""}`,
-      volume: Number(item.regularMarketVolume || 0)
+      description: `${item.shortName ?? item.longName ?? item.symbol}${item.exchange ? ` (${item.exchange})` : ""}`,
+      volume: Number(item.regularMarketVolume ?? 0)
     }))
     .filter((item: PopularStock) => item.volume > 0);
 }
@@ -48,6 +52,11 @@ async function fetchLastHourVolume(symbol: string): Promise<number> {
 }
 
 export async function GET(req: Request) {
+  const blocked = envCheckResponse(getMissingDatabaseEnvVars);
+  if (blocked) {
+    return blocked;
+  }
+
   try {
     const { searchParams } = new URL(req.url);
     const windowParam = searchParams.get("window");
@@ -58,7 +67,7 @@ export async function GET(req: Request) {
     const [usMostActive, indiaMostActive, topSubscribed] = await Promise.all([
       fetchMostActive("US"),
       fetchMostActive("IN"),
-      pool.query(
+      getPool().query(
         `
         SELECT s.symbol, COUNT(*)::int AS subscribers
         FROM subscriptions sub

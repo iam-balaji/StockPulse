@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import StockChart from "@/components/StockChart";
 import { StockDetailResponse, StockNews } from "@/types/stock";
@@ -75,13 +75,68 @@ export default function DashboardPage() {
     setSearchError("");
   }, [activeTab]);
 
+  const fetchSubscriptions = useCallback(
+    async (activeToken: string) => {
+      const res = await fetch("/api/subscriptions", {
+        headers: { Authorization: `Bearer ${activeToken}` }
+      });
+      if (res.status === 401) {
+        localStorage.clear();
+        router.push("/login");
+        return;
+      }
+      const data = await res.json();
+      setSubscriptions(data.map((row: { symbol: string }) => row.symbol));
+    },
+    [router]
+  );
+
+  const fetchTopSearched = useCallback(async () => {
+    try {
+      setTopSearchedLoading(true);
+      const res = await fetch("/api/stocks/trending");
+      const data = await res.json();
+      if (Array.isArray(data)) setTopSearched(data);
+    } catch {
+      setTopSearched([]);
+    } finally {
+      setTopSearchedLoading(false);
+    }
+  }, []);
+
+  const fetchPopularStocks = useCallback(async (windowType: "hour" | "day") => {
+    try {
+      setPopularLoading(true);
+      const res = await fetch(`/api/stocks/popular?window=${windowType}`);
+      const data = await res.json();
+      if (Array.isArray(data)) setPopularStocks(data);
+    } catch {
+      setPopularStocks([]);
+    } finally {
+      setPopularLoading(false);
+    }
+  }, []);
+
+  const fetchMarketNews = useCallback(async () => {
+    try {
+      setNewsLoading(true);
+      const res = await fetch("/api/news");
+      const data = await res.json();
+      if (Array.isArray(data)) setMarketNews(data);
+    } catch {
+      setMarketNews([]);
+    } finally {
+      setNewsLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!token) return;
-    fetchSubscriptions(token);
-    fetchPopularStocks("day");
-    fetchTopSearched();
-    fetchMarketNews();
-  }, [token]);
+    void fetchSubscriptions(token);
+    void fetchPopularStocks("day");
+    void fetchTopSearched();
+    void fetchMarketNews();
+  }, [token, fetchSubscriptions, fetchPopularStocks, fetchTopSearched, fetchMarketNews]);
 
   useEffect(() => {
     if (!searchTerm.trim()) {
@@ -94,19 +149,6 @@ export default function DashboardPage() {
     }, 350);
     return () => clearTimeout(timer);
   }, [searchTerm]);
-
-  async function fetchSubscriptions(activeToken: string) {
-    const res = await fetch("/api/subscriptions", {
-      headers: { Authorization: `Bearer ${activeToken}` }
-    });
-    if (res.status === 401) {
-      localStorage.clear();
-      router.push("/login");
-      return;
-    }
-    const data = await res.json();
-    setSubscriptions(data.map((row: { symbol: string }) => row.symbol));
-  }
 
   async function runSearch(query: string, track: boolean) {
     if (!query.trim()) return;
@@ -128,50 +170,6 @@ export default function DashboardPage() {
 
     setSearchResults(data);
     setSearchLoading(false);
-  }
-
-  async function onSearch() {
-    await runSearch(searchTerm, true);
-    await fetchTopSearched();
-  }
-
-  async function fetchTopSearched() {
-    try {
-      setTopSearchedLoading(true);
-      const res = await fetch("/api/stocks/trending");
-      const data = await res.json();
-      if (Array.isArray(data)) setTopSearched(data);
-    } catch {
-      setTopSearched([]);
-    } finally {
-      setTopSearchedLoading(false);
-    }
-  }
-
-  async function fetchPopularStocks(windowType: "hour" | "day") {
-    try {
-      setPopularLoading(true);
-      const res = await fetch(`/api/stocks/popular?window=${windowType}`);
-      const data = await res.json();
-      if (Array.isArray(data)) setPopularStocks(data);
-    } catch {
-      setPopularStocks([]);
-    } finally {
-      setPopularLoading(false);
-    }
-  }
-
-  async function fetchMarketNews() {
-    try {
-      setNewsLoading(true);
-      const res = await fetch("/api/news");
-      const data = await res.json();
-      if (Array.isArray(data)) setMarketNews(data);
-    } catch {
-      setMarketNews([]);
-    } finally {
-      setNewsLoading(false);
-    }
   }
 
   async function addSubscription(symbol: string) {
@@ -255,27 +253,27 @@ export default function DashboardPage() {
     setShowSettings(false);
   }
 
-  function isSymbolVisible(symbol: string) {
+  const isSymbolVisible = useCallback((symbol: string) => {
     if (activeTab === "news") return true;
     if (activeTab === "india") return symbol.endsWith(".NS") || symbol.endsWith(".BO");
     return !symbol.endsWith(".NS") && !symbol.endsWith(".BO");
-  }
+  }, [activeTab]);
 
   const filteredSearchResults = useMemo(
     () => searchResults.filter((item) => isSymbolVisible(item.symbol)),
-    [searchResults, activeTab]
+    [searchResults, isSymbolVisible]
   );
   const filteredPopularStocks = useMemo(
     () => popularStocks.filter((item) => isSymbolVisible(item.symbol)),
-    [popularStocks, activeTab]
+    [popularStocks, isSymbolVisible]
   );
   const filteredSubscriptions = useMemo(
     () => subscriptions.filter((symbol) => isSymbolVisible(symbol)),
-    [subscriptions, activeTab]
+    [subscriptions, isSymbolVisible]
   );
   const filteredTopSearched = useMemo(
     () => topSearched.filter((item) => isSymbolVisible(item.symbol)),
-    [topSearched, activeTab]
+    [topSearched, isSymbolVisible]
   );
 
   const displayTopChips = useMemo(() => {

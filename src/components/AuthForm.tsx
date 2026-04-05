@@ -33,8 +33,8 @@ export default function AuthForm({ mode }: Props) {
       localStorage.setItem("token", data.token);
       localStorage.setItem("userEmail", data.user.email);
       router.push("/dashboard");
-    } catch (err: any) {
-      setError(err.message || "Something went wrong");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setLoading(false);
     }

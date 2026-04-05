@@ -10,7 +10,7 @@ Next.js full-stack app with JWT auth, PostgreSQL, stock search/subscriptions, qu
 npm install
 ```
 
-2. Create env:
+2. Create env (copy the example, then edit `.env.local` with your real `DATABASE_URL`, `JWT_SECRET`, and `FINNHUB_API_KEY`). Do not commit `.env.local`.
 
 ```bash
 cp .env.example .env.local

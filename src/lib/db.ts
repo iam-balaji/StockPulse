@@ -2,18 +2,46 @@ import { Pool } from "pg";
 
 let pool: Pool | null = null;
 
+/** Local Postgres usually has SSL off; `sslmode=require` in the URL still makes `pg` use TLS and breaks login with ECONNRESET / "server does not support SSL". */
+function isLocalDatabaseHost(connectionString: string): boolean {
+  try {
+    const u = new URL(connectionString.replace(/^postgres(ql)?:/, "http:"));
+    const h = u.hostname.toLowerCase();
+    return h === "localhost" || h === "127.0.0.1" || h === "::1";
+  } catch {
+    return /\blocalhost\b|127\.0\.0\.1/.test(connectionString);
+  }
+}
+
+const EXAMPLE_DB_HOST = "host.region.provider.com";
+
 function createPool(): Pool {
   const connectionString = process.env.DATABASE_URL?.trim();
   if (!connectionString) {
     throw new Error("DATABASE_URL is not set");
   }
 
+  try {
+    const u = new URL(connectionString.replace(/^postgres(ql)?:/, "http:"));
+    if (u.hostname.toLowerCase() === EXAMPLE_DB_HOST) {
+      throw new Error(
+        "DATABASE_URL still points at the placeholder host from .env.example. Set it to your real Postgres URL (Neon, Supabase, local, etc.)."
+      );
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message.includes("DATABASE_URL still")) throw e;
+  }
+
+  const local = isLocalDatabaseHost(connectionString);
+  const forceSslEnv = process.env.POSTGRES_SSL === "true";
+
   const needsSsl =
-    connectionString.includes("sslmode=require") ||
-    connectionString.includes("neon.tech") ||
-    connectionString.includes("supabase.co") ||
-    connectionString.includes("pooler.supabase.com") ||
-    process.env.POSTGRES_SSL === "true";
+    (forceSslEnv || !local) &&
+    (connectionString.includes("sslmode=require") ||
+      connectionString.includes("neon.tech") ||
+      connectionString.includes("supabase.co") ||
+      connectionString.includes("pooler.supabase.com") ||
+      forceSslEnv);
 
   return new Pool({
     connectionString,

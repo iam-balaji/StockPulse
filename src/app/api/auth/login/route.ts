@@ -31,10 +31,19 @@ export async function POST(req: NextRequest) {
     const token = signToken({ userId: user.id, email: user.email });
     return NextResponse.json({ token, user: { id: user.id, email: user.email } });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "";
+    const message = err instanceof Error ? err.message : String(err);
+    if (process.env.NODE_ENV === "development") {
+      console.error("[api/auth/login]", err);
+    }
     if (message.includes("DATABASE_URL")) {
       return NextResponse.json({ error: "Server configuration error." }, { status: 503 });
     }
-    return NextResponse.json({ error: "Login failed." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Login failed.",
+        ...(process.env.NODE_ENV === "development" && { detail: message })
+      },
+      { status: 500 }
+    );
   }
 }

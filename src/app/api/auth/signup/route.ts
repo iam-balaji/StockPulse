@@ -30,7 +30,10 @@ export async function POST(req: NextRequest) {
     const token = signToken({ userId: user.id, email: user.email });
     return NextResponse.json({ token, user });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : "";
+    const message = error instanceof Error ? error.message : String(error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("[api/auth/signup]", error);
+    }
     if (message.includes("DATABASE_URL")) {
       return NextResponse.json({ error: "Server configuration error." }, { status: 503 });
     }
@@ -38,6 +41,12 @@ export async function POST(req: NextRequest) {
     if (code === "23505") {
       return NextResponse.json({ error: "Email already exists." }, { status: 409 });
     }
-    return NextResponse.json({ error: "Signup failed." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: "Signup failed.",
+        ...(process.env.NODE_ENV === "development" && { detail: message })
+      },
+      { status: 500 }
+    );
   }
 }

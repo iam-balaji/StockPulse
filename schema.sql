@@ -3,9 +3,29 @@
 
 CREATE TABLE IF NOT EXISTS users (
   id SERIAL PRIMARY KEY,
-  email TEXT UNIQUE NOT NULL,
-  password TEXT NOT NULL
+  email TEXT UNIQUE,
+  password TEXT,
+  firebase_uid TEXT
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS firebase_uid TEXT;
+ALTER TABLE users ALTER COLUMN password DROP NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique
+ON users(firebase_uid)
+WHERE firebase_uid IS NOT NULL;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'users_firebase_uid_key'
+  ) THEN
+    ALTER TABLE users
+    ADD CONSTRAINT users_firebase_uid_key UNIQUE (firebase_uid);
+  END IF;
+END
+$$;
 
 CREATE TABLE IF NOT EXISTS stocks (
   id SERIAL PRIMARY KEY,

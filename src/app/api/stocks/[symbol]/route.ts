@@ -1,16 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCandles, getQuote, getTopNews } from "@/lib/finnhub";
-import { envCheckResponse, getMissingFinnhubEnvVars } from "@/lib/env";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ symbol: string }> }
 ) {
-  const blocked = envCheckResponse(getMissingFinnhubEnvVars);
-  if (blocked) {
-    return blocked;
-  }
-
   try {
     const { symbol } = await params;
     const normalized = symbol.toUpperCase();

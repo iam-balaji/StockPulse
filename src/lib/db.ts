@@ -64,9 +64,51 @@ export async function ensureTables() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS users (
       id SERIAL PRIMARY KEY,
-      email TEXT UNIQUE NOT NULL,
-      password TEXT NOT NULL
+      email TEXT UNIQUE,
+      password TEXT,
+      firebase_uid TEXT
     );
+  `);
+
+  await db.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS firebase_uid TEXT;
+  `);
+
+  await db.query(`
+    ALTER TABLE users
+    ALTER COLUMN password DROP NOT NULL;
+  `);
+
+  try {
+    await db.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS users_firebase_uid_unique
+      ON users(firebase_uid)
+      WHERE firebase_uid IS NOT NULL;
+    `);
+  } catch (error: unknown) {
+    // Concurrent app-start requests can race on index creation.
+    const code = (error as { code?: string })?.code;
+    const detail = (error as { detail?: string })?.detail || "";
+    if (!(code === "23505" && detail.includes("users_firebase_uid_unique"))) {
+      throw error;
+    }
+  }
+
+  // Ensure ON CONFLICT can always target firebase_uid via a real UNIQUE constraint.
+  await db.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'users_firebase_uid_key'
+      ) THEN
+        ALTER TABLE users
+        ADD CONSTRAINT users_firebase_uid_key UNIQUE (firebase_uid);
+      END IF;
+    END
+    $$;
   `);
 
   await db.query(`
@@ -86,6 +128,16 @@ export async function ensureTables() {
   `);
 
   await db.query(`
+    ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS notify_daily BOOLEAN NOT NULL DEFAULT false;
+  `);
+
+  await db.query(`
+    ALTER TABLE subscriptions
+    ADD COLUMN IF NOT EXISTS last_digest_et_date DATE;
+  `);
+
+  await db.query(`
     CREATE SEQUENCE IF NOT EXISTS search_events_id_seq;
   `);
 
@@ -100,4 +152,47 @@ export async function ensureTables() {
   await db.query(`
     ALTER SEQUENCE search_events_id_seq OWNED BY search_events.id;
   `);
+}
+
+export async function ensureAppUser(firebaseUid: string, email: string | null): Promise<number> {
+  const db = getPool();
+  const normalizedEmail = email?.trim().toLowerCase() || `${firebaseUid}@firebase.local`;
+
+  // First, link pre-existing email/password accounts to Firebase identity if compatible.
+  const linked = await db.query(
+    `
+      UPDATE users
+      SET firebase_uid = $1, password = COALESCE(password, '')
+      WHERE email = $2
+        AND (firebase_uid IS NULL OR firebase_uid = $1)
+      RETURNING id
+    `,
+    [firebaseUid, normalizedEmail]
+  );
+  if (linked.rows[0]?.id) {
+    return Number(linked.rows[0].id);
+  }
+
+  try {
+    const result = await db.query(
+      `
+        INSERT INTO users (firebase_uid, email, password)
+        VALUES ($1, $2, '')
+        ON CONFLICT ON CONSTRAINT users_firebase_uid_key
+        DO UPDATE SET email = EXCLUDED.email
+        RETURNING id
+      `,
+      [firebaseUid, normalizedEmail]
+    );
+    return Number(result.rows[0].id);
+  } catch (error: unknown) {
+    const code = (error as { code?: string })?.code;
+    const constraint = (error as { constraint?: string })?.constraint;
+    if (code === "23505" && constraint === "users_email_key") {
+      throw new Error(
+        "Email is already linked to another account. Use the same sign-in provider or unlink it first."
+      );
+    }
+    throw error;
+  }
 }

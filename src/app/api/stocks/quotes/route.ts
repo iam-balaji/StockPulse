@@ -6,18 +6,29 @@ type QuoteRow = {
   changePercent: number;
 };
 
+const YAHOO_TIMEOUT_MS = 5000;
+
 async function fetchYahooQuote(symbol: string): Promise<QuoteRow> {
-  const res = await fetch(
-    `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`,
-    { next: { revalidate: 60 } }
-  );
+  const upper = symbol.toUpperCase();
+  let res: Response;
+  try {
+    res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?range=1d&interval=1d`,
+      {
+        next: { revalidate: 60 },
+        signal: AbortSignal.timeout(YAHOO_TIMEOUT_MS)
+      }
+    );
+  } catch {
+    return { symbol: upper, price: 0, changePercent: 0 };
+  }
   if (!res.ok) {
-    return { symbol: symbol.toUpperCase(), price: 0, changePercent: 0 };
+    return { symbol: upper, price: 0, changePercent: 0 };
   }
   const data = await res.json();
   const meta = data?.chart?.result?.[0]?.meta;
   if (!meta) {
-    return { symbol: symbol.toUpperCase(), price: 0, changePercent: 0 };
+    return { symbol: upper, price: 0, changePercent: 0 };
   }
   const price = Number(meta.regularMarketPrice ?? meta.previousClose ?? 0);
   let changePercent = Number(meta.regularMarketChangePercent);
@@ -30,7 +41,7 @@ async function fetchYahooQuote(symbol: string): Promise<QuoteRow> {
     }
   }
   return {
-    symbol: symbol.toUpperCase(),
+    symbol: upper,
     price,
     changePercent
   };

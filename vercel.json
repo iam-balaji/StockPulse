@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/daily-watchlist-digest",
+      "schedule": "35 14 * * 1-5"
+    }
+  ]
+}
